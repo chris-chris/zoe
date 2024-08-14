@@ -1,4 +1,8 @@
 import * as ort from "onnxruntime-node";
+import { VarVisibility, Visibility } from "./vars";
+import { RegionSettings } from "./region";
+import { RunArgs } from "./lib";
+
 const fs = require("fs");
 const onnx = require("onnx-proto"); // onnx-proto를 사용해 ONNX 모델 파싱
 
@@ -24,38 +28,8 @@ interface ForwardResult {
   maxRangeSize: number;
 }
 
-interface RunArgs {
-  variables: { [key: string]: number };
-  // 추가적인 필드 정의
-}
-
 interface GraphError extends Error {
   // 필요한 필드 추가
-}
-
-class Model {
-  graph: any;
-
-  constructor(reader: ArrayBuffer, runArgs: RunArgs) {
-    const graph = Model.loadOnnxModel(reader, runArgs);
-    this.graph = graph;
-  }
-
-  static async loadOnnxModel(reader: ArrayBuffer, runArgs: RunArgs) {
-    // TypeScript에서 ONNX 모델을 로드하는 코드 추가
-    // onnxruntime-node 라이브러리를 사용
-
-    // Create a new inference session and load model asynchronously from an array bufer.
-    const session = await ort.InferenceSession.create(reader);
-    // ONNX 모델을 처리하고 ParsedNodes를 반환하는 로직 구현
-  }
-
-  forward(modelInputs: ort.Tensor[], runArgs: RunArgs, regionSettings: any) {
-    // 모델의 Forward pass 수행
-    // TypeScript에서 적절히 Tensor 데이터 타입을 사용하여 구현
-  }
-
-  // 기타 메서드 구현
 }
 
 async function loadOnnxModel(modelPath: string): Promise<ort.InferenceSession> {
@@ -64,16 +38,8 @@ async function loadOnnxModel(modelPath: string): Promise<ort.InferenceSession> {
   return session;
 }
 
-interface RunArgs {
-  variables: { [key: string]: number };
-}
-
 interface GraphError extends Error {
   // GraphError에 필요한 필드와 메서드를 정의합니다.
-}
-
-interface RunArgs {
-  variables: { [key: string]: number };
 }
 
 interface GraphError extends Error {
@@ -111,6 +77,31 @@ class GraphError extends Error {
   }
 }
 
+interface GraphError extends Error {
+  // 필요한 필드와 메서드를 정의합니다.
+}
+
+interface GraphSettings {
+  runArgs: RunArgs;
+  modelInstanceShapes: any[]; // 필요한 타입으로 변경
+  moduleSizes: any; // 필요한 타입으로 변경
+  numRows: number;
+  totalAssignments: number;
+  requiredLookups: Set<any>; // 필요한 타입으로 변경
+  requiredRangeChecks: Set<any>; // 필요한 타입으로 변경
+  modelOutputScales: any[]; // 필요한 타입으로 변경
+  modelInputScales: any[]; // 필요한 타입으로 변경
+  numDynamicLookups: number;
+  totalDynamicColSize: number;
+  numShuffles: number;
+  totalShuffleColSize: number;
+  totalConstSize: number;
+  checkMode: any; // 필요한 타입으로 변경
+  version: string;
+  numBlindingFactors: number | null;
+  timestamp: number | null;
+}
+
 async function loadOnnxUsingTract(
   modelPath: string,
   runArgs: RunArgs
@@ -123,9 +114,8 @@ async function loadOnnxUsingTract(
   const model = onnx.ModelProto.decode(modelBuffer);
 
   const graph = model.graph;
-  const variables: Map<string, number> = new Map(
-    Object.entries(runArgs.variables)
-  );
+  // runArgs.variables는 Array<[string, number]> 형식이어야 합니다
+  const variables: Map<string, number> = new Map(runArgs.variables);
 
   for (const input of graph.input) {
     const inputName = input.name;
@@ -154,7 +144,8 @@ async function loadOnnxUsingTract(
 
   // 출력 정보를 설정 (필요한 경우 추가 로직 구현)
   let symbolValues = SymbolValues.default();
-  for (const [symbol, value] of Object.entries(runArgs.variables)) {
+  for (const [symbol, value] of runArgs.variables) {
+    // Object.entries를 직접 사용할 필요 없음
     symbolValues = symbolValues.with(symbol, value);
     console.debug(`set ${symbol} to ${value}`);
   }
@@ -163,4 +154,138 @@ async function loadOnnxUsingTract(
   const typedModel = session; // 추가적인 변환 및 최적화 로직 구현 필요
 
   return [typedModel, symbolValues];
+}
+
+// ForwardResult 클래스 정의
+class ForwardResult {
+  outputs: ort.Tensor[];
+  maxLookupInputs: number;
+  minLookupInputs: number;
+  maxRangeSize: number;
+
+  constructor(res: any) {
+    this.outputs = res.outputs;
+    this.maxLookupInputs = res.maxLookupInputs;
+    this.minLookupInputs = res.minLookupInputs;
+    this.maxRangeSize = res.maxRangeSize;
+  }
+}
+
+class Model {
+  graph: any; // ParsedNodes 등의 타입으로 변경 필요
+  visibility: any; // VarVisibility 등의 타입으로 변경 필요
+
+  constructor(graph: any, visibility: any) {
+    this.graph = graph;
+    this.visibility = visibility;
+  }
+
+  static async create(reader: Buffer, runArgs: RunArgs): Promise<Model> {
+    const visibility = VarVisibility.fromArgs(runArgs); // 구현 필요
+
+    const graph = await Model.loadOnnxModel(reader, runArgs, visibility);
+    const model = new Model(graph, visibility);
+
+    // console.debug(`\n ${model.tableNodes()}`);  // 구현 필요
+
+    return model;
+  }
+
+  save(filePath: string): void {
+    const writer = fs.createWriteStream(filePath);
+    writer.write(JSON.stringify(this)); // `bincode::serialize_into` 대신 JSON 사용
+    writer.end();
+  }
+
+  static load(filePath: string): Model {
+    const data = fs.readFileSync(filePath);
+    const model = JSON.parse(data.toString()); // `bincode::deserialize` 대신 JSON 사용
+    return new Model(model.graph, model.visibility);
+  }
+
+  async genParams(runArgs: RunArgs, checkMode: any): Promise<GraphSettings> {
+    const instanceShapes = this.instanceShapes();
+
+    console.debug(`Model has ${instanceShapes.length} instances`);
+
+    const inputs: ort.Tensor[] = await Promise.all(
+      this.graph.inputShapes().map(async (shape: any) => {
+        const len = shape.reduce((a: number, b: number) => a * b, 1);
+        const tensorData = new Array(len).fill(0).map(() => {
+          if (!this.visibility.input.isFixed()) {
+            return Math.random(); // Value.unknown() 대신
+          } else {
+            return Math.random(); // Fp.random() 대신
+          }
+        });
+        return new ort.Tensor("float32", tensorData, shape);
+      })
+    );
+
+    const res = await this.dummyLayout(
+      runArgs,
+      inputs,
+      RegionSettings.allFalse()
+    );
+
+    return {
+      runArgs: runArgs,
+      modelInstanceShapes: instanceShapes,
+      moduleSizes: {}, // 기본값 사용
+      numRows: res.numRows,
+      totalAssignments: res.linearCoord,
+      requiredLookups: new Set(res.lookupOps),
+      requiredRangeChecks: new Set(res.rangeChecks),
+      modelOutputScales: this.graph.getOutputScales(),
+      modelInputScales: this.graph.getInputScales(),
+      numDynamicLookups: res.numDynamicLookups,
+      totalDynamicColSize: res.dynamicLookupColCoord,
+      numShuffles: res.numShuffles,
+      totalShuffleColSize: res.shuffleColCoord,
+      totalConstSize: res.totalConstSize,
+      checkMode: checkMode,
+      version: "1.0.0", // CARGO_PKG_VERSION 대체
+      numBlindingFactors: null,
+      timestamp: Date.now(),
+    };
+  }
+
+  async forward(
+    modelInputs: ort.Tensor[],
+    runArgs: RunArgs,
+    regionSettings: any
+  ): Promise<ForwardResult> {
+    const valtensorInputs = modelInputs.map(
+      (input) => new ort.Tensor("float32", input.data, input.dims)
+    );
+    const res = await this.dummyLayout(
+      runArgs,
+      valtensorInputs,
+      regionSettings
+    );
+    return new ForwardResult(res);
+  }
+
+  private async dummyLayout(
+    runArgs: RunArgs,
+    inputs: ort.Tensor[],
+    regionSettings: any
+  ): Promise<any> {
+    // dummy layout 구현 필요
+    return {};
+  }
+
+  private instanceShapes(): any[] {
+    // instanceShapes 구현 필요
+    return [];
+  }
+
+  private static async loadOnnxModel(
+    reader: Buffer,
+    runArgs: RunArgs,
+    visibility: any
+  ): Promise<any> {
+    // loadOnnxModel 구현 필요
+    return {};
+  }
 }

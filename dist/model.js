@@ -33,6 +33,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const ort = __importStar(require("onnxruntime-node"));
+const vars_1 = require("./vars");
+const region_1 = require("./region");
 const fs = require("fs");
 const onnx = require("onnx-proto"); // onnx-proto를 사용해 ONNX 모델 파싱
 var NodeType;
@@ -40,25 +42,6 @@ var NodeType;
     NodeType[NodeType["Node"] = 0] = "Node";
     NodeType[NodeType["SubGraph"] = 1] = "SubGraph";
 })(NodeType || (NodeType = {}));
-class Model {
-    constructor(reader, runArgs) {
-        const graph = Model.loadOnnxModel(reader, runArgs);
-        this.graph = graph;
-    }
-    static loadOnnxModel(reader, runArgs) {
-        return __awaiter(this, void 0, void 0, function* () {
-            // TypeScript에서 ONNX 모델을 로드하는 코드 추가
-            // onnxruntime-node 라이브러리를 사용
-            // Create a new inference session and load model asynchronously from an array bufer.
-            const session = yield ort.InferenceSession.create(reader);
-            // ONNX 모델을 처리하고 ParsedNodes를 반환하는 로직 구현
-        });
-    }
-    forward(modelInputs, runArgs, regionSettings) {
-        // 모델의 Forward pass 수행
-        // TypeScript에서 적절히 Tensor 데이터 타입을 사용하여 구현
-    }
-}
 function loadOnnxModel(modelPath) {
     return __awaiter(this, void 0, void 0, function* () {
         const session = yield ort.InferenceSession.create(modelPath);
@@ -97,7 +80,8 @@ function loadOnnxUsingTract(modelPath, runArgs) {
         const modelBuffer = fs.readFileSync(modelPath);
         const model = onnx.ModelProto.decode(modelBuffer);
         const graph = model.graph;
-        const variables = new Map(Object.entries(runArgs.variables));
+        // runArgs.variables는 Array<[string, number]> 형식이어야 합니다
+        const variables = new Map(runArgs.variables);
         for (const input of graph.input) {
             const inputName = input.name;
             const tensorType = (_a = input.type) === null || _a === void 0 ? void 0 : _a.tensorType;
@@ -122,7 +106,8 @@ function loadOnnxUsingTract(modelPath, runArgs) {
         }
         // 출력 정보를 설정 (필요한 경우 추가 로직 구현)
         let symbolValues = SymbolValues.default();
-        for (const [symbol, value] of Object.entries(runArgs.variables)) {
+        for (const [symbol, value] of runArgs.variables) {
+            // Object.entries를 직접 사용할 필요 없음
             symbolValues = symbolValues.with(symbol, value);
             console.debug(`set ${symbol} to ${value}`);
         }
@@ -130,5 +115,101 @@ function loadOnnxUsingTract(modelPath, runArgs) {
         const typedModel = session; // 추가적인 변환 및 최적화 로직 구현 필요
         return [typedModel, symbolValues];
     });
+}
+// ForwardResult 클래스 정의
+class ForwardResult {
+    constructor(res) {
+        this.outputs = res.outputs;
+        this.maxLookupInputs = res.maxLookupInputs;
+        this.minLookupInputs = res.minLookupInputs;
+        this.maxRangeSize = res.maxRangeSize;
+    }
+}
+class Model {
+    constructor(graph, visibility) {
+        this.graph = graph;
+        this.visibility = visibility;
+    }
+    static create(reader, runArgs) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const visibility = vars_1.VarVisibility.fromArgs(runArgs); // 구현 필요
+            const graph = yield Model.loadOnnxModel(reader, runArgs, visibility);
+            const model = new Model(graph, visibility);
+            // console.debug(`\n ${model.tableNodes()}`);  // 구현 필요
+            return model;
+        });
+    }
+    save(filePath) {
+        const writer = fs.createWriteStream(filePath);
+        writer.write(JSON.stringify(this)); // `bincode::serialize_into` 대신 JSON 사용
+        writer.end();
+    }
+    static load(filePath) {
+        const data = fs.readFileSync(filePath);
+        const model = JSON.parse(data.toString()); // `bincode::deserialize` 대신 JSON 사용
+        return new Model(model.graph, model.visibility);
+    }
+    genParams(runArgs, checkMode) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instanceShapes = this.instanceShapes();
+            console.debug(`Model has ${instanceShapes.length} instances`);
+            const inputs = yield Promise.all(this.graph.inputShapes().map((shape) => __awaiter(this, void 0, void 0, function* () {
+                const len = shape.reduce((a, b) => a * b, 1);
+                const tensorData = new Array(len).fill(0).map(() => {
+                    if (!this.visibility.input.isFixed()) {
+                        return Math.random(); // Value.unknown() 대신
+                    }
+                    else {
+                        return Math.random(); // Fp.random() 대신
+                    }
+                });
+                return new ort.Tensor("float32", tensorData, shape);
+            })));
+            const res = yield this.dummyLayout(runArgs, inputs, region_1.RegionSettings.allFalse());
+            return {
+                runArgs: runArgs,
+                modelInstanceShapes: instanceShapes,
+                moduleSizes: {}, // 기본값 사용
+                numRows: res.numRows,
+                totalAssignments: res.linearCoord,
+                requiredLookups: new Set(res.lookupOps),
+                requiredRangeChecks: new Set(res.rangeChecks),
+                modelOutputScales: this.graph.getOutputScales(),
+                modelInputScales: this.graph.getInputScales(),
+                numDynamicLookups: res.numDynamicLookups,
+                totalDynamicColSize: res.dynamicLookupColCoord,
+                numShuffles: res.numShuffles,
+                totalShuffleColSize: res.shuffleColCoord,
+                totalConstSize: res.totalConstSize,
+                checkMode: checkMode,
+                version: "1.0.0", // CARGO_PKG_VERSION 대체
+                numBlindingFactors: null,
+                timestamp: Date.now(),
+            };
+        });
+    }
+    forward(modelInputs, runArgs, regionSettings) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const valtensorInputs = modelInputs.map((input) => new ort.Tensor("float32", input.data, input.dims));
+            const res = yield this.dummyLayout(runArgs, valtensorInputs, regionSettings);
+            return new ForwardResult(res);
+        });
+    }
+    dummyLayout(runArgs, inputs, regionSettings) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // dummy layout 구현 필요
+            return {};
+        });
+    }
+    instanceShapes() {
+        // instanceShapes 구현 필요
+        return [];
+    }
+    static loadOnnxModel(reader, runArgs, visibility) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // loadOnnxModel 구현 필요
+            return {};
+        });
+    }
 }
 //# sourceMappingURL=model.js.map
