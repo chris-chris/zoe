@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Visibility = exports.VarVisibility = void 0;
 class VarVisibility {
+    input;
+    params;
+    output;
     constructor(input, params, output) {
         this.input = input;
         this.params = params;
@@ -40,6 +43,12 @@ class VarVisibility {
 exports.VarVisibility = VarVisibility;
 // Visibility Enum (assuming it's an enum or class in Rust)
 class Visibility {
+    static Public = new Visibility("Public");
+    static Private = new Visibility("Private");
+    static Fixed = new Visibility("Fixed");
+    static Hashed = new Visibility("Hashed");
+    static Polycommit = new Visibility("Polycommit");
+    value;
     constructor(value) {
         this.value = value;
     }
@@ -60,18 +69,12 @@ class Visibility {
     }
 }
 exports.Visibility = Visibility;
-Visibility.Public = new Visibility("Public");
-Visibility.Private = new Visibility("Private");
-Visibility.Fixed = new Visibility("Fixed");
-Visibility.Hashed = new Visibility("Hashed");
-Visibility.Polycommit = new Visibility("Polycommit");
 // GraphError class (based on the usage in the Rust code)
 class GraphError extends Error {
     constructor(message) {
         super(message);
         this.name = "GraphError";
     }
+    static ParamsPublicVisibility = new GraphError("ParamsPublicVisibility");
+    static Visibility = new GraphError("Visibility");
 }
-GraphError.ParamsPublicVisibility = new GraphError("ParamsPublicVisibility");
-GraphError.Visibility = new GraphError("Visibility");
-//# sourceMappingURL=vars.js.map

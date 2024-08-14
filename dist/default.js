@@ -75,4 +75,3 @@ exports.DEFAULT_USE_REDUCED_SRS_FOR_VERIFICATION = false;
 exports.DEFAULT_ONLY_RANGE_CHECK_REBASE = false;
 // Default commitment
 exports.DEFAULT_COMMITMENT = "kzg";
-//# sourceMappingURL=default.js.map

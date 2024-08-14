@@ -13,6 +13,21 @@ var Commitments;
     // Add other commitment schemes here
 })(Commitments || (Commitments = {}));
 class RunArgs {
+    tolerance;
+    inputScale;
+    paramScale;
+    scaleRebaseMultiplier;
+    lookupRange;
+    logrows;
+    numInnerCols;
+    variables;
+    inputVisibility;
+    outputVisibility;
+    paramVisibility;
+    divRebasing;
+    rebaseFracZeroConstants;
+    checkMode;
+    commitment;
     constructor() {
         this.tolerance = { val: 0.0 };
         this.inputScale = 7;
@@ -72,4 +87,3 @@ function parseKeyValue(s) {
     const value = s.slice(pos + 2).trim();
     return [key, value];
 }
-//# sourceMappingURL=lib.js.map

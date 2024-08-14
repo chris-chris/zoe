@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RegionSettings = void 0;
 class RegionSettings {
+    witnessGen;
+    checkRange;
     constructor(witnessGen, checkRange) {
         this.witnessGen = witnessGen;
         this.checkRange = checkRange;
@@ -14,4 +16,3 @@ class RegionSettings {
     }
 }
 exports.RegionSettings = RegionSettings;
-//# sourceMappingURL=region.js.map

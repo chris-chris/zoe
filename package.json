@@ -24,6 +24,7 @@
   "dependencies": {
     "commander": "^12.1.0",
     "figlet": "^1.7.0",
+    "o1js": "^1.5.1",
     "onnxruntime-node": "^1.18.0",
     "onnxruntime-web": "^1.18.0",
     "zoe": "^0.0.4"
