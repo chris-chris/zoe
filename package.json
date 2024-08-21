@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "npx tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "watch:debug": "nodemon --inspect=5858 -e ts,tsx --exec node -r ts-node/register ./src/index.ts"
   },
   "repository": {
     "type": "git",
@@ -25,12 +26,15 @@
     "commander": "^12.1.0",
     "figlet": "^1.7.0",
     "o1js": "^1.5.1",
+    "onnx-proto": "^8.0.1",
     "onnxruntime-node": "^1.18.0",
-    "onnxruntime-web": "^1.18.0",
+    "onnxruntime-web": "^1.19.0",
+    "protobufjs": "^7.3.2",
     "zoe": "^0.0.4"
   },
   "devDependencies": {
     "@types/node": "^22.1.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
   }
 }
